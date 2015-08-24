@@ -1,0 +1,23 @@
+<resources>
+    <string name="app_name">Movies</string>
+
+    <string name="title_activity_detail">Details</string>
+
+    <!-- Movie details layout contains title, release date, movie poster, vote average,
+         and plot synopsis. -->
+    <string name="label_movie_title">Title</string>
+    <string name="label_movie_release_date">Release Date</string>
+    <string name="label_movie_poster">Poster</string>
+    <string name="label_movie_vote_average">Vote Average</string>
+    <string name="label_movie_overview">Synopsis</string>
+
+    <!-- "Settings" menu item text -->
+    <string name="action_settings">Settings</string>
+    <!-- "Settings" text in action bar -->
+    <string name="title_activity_settings">Settings</string>
+
+    <string name="prefs_sort_order_key" translatable="false">sort_order</string>
+    <string name="prefs_sort_order_title">Sort Order</string>
+    <string name="prefs_sort_order_default">Most Popular</string>
+
+</resources>
