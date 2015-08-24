@@ -20,4 +20,6 @@
     <string name="prefs_sort_order_title">Sort Order</string>
     <string name="prefs_sort_order_default">Most Popular</string>
 
+    <string name="saved_state_movieData_key" translatable="false">movie_data</string>
+    <string name="saved_state_baseURL_key" translatable="false">base_url</string>
 </resources>

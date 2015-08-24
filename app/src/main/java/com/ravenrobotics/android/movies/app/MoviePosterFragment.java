@@ -3,6 +3,8 @@ package com.ravenrobotics.android.movies.app;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
@@ -44,26 +46,65 @@ public class MoviePosterFragment extends Fragment {
 
     private ImageAdapter posterAdapter;
 
+    private String sortOrder;
+    private String baseURL;
+    private String movieData;
+
     public MoviePosterFragment() {
     } // end constructor
 
+    // Checks if there is an active network connection
+    // source: https://stackoverflow.com/questions/4238921...
+    // .../detect-whether-there-is-an-internet-connection-available-on-android
+    private boolean isNetworkAvailable() {
+        ConnectivityManager connectivityManager
+                = (ConnectivityManager) getActivity()
+                .getSystemService(Context.CONNECTIVITY_SERVICE);
+        NetworkInfo activeNetworkInfo = connectivityManager.getActiveNetworkInfo();
+        return activeNetworkInfo != null && activeNetworkInfo.isConnectedOrConnecting();
+    } // end method isNetworkAvailable
+
     private void updateMovies() {
         SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(getActivity());
-        String sort_order = sharedPref.getString(getString(R.string.prefs_sort_order_key), getString(R.string.prefs_sort_order_default));
+        sortOrder = sharedPref.getString(getString(R.string.prefs_sort_order_key),
+                getString(R.string.prefs_sort_order_default));
         FetchMoviesTask ft = new FetchMoviesTask();
-        ft.execute(sort_order);
+        ft.execute(sortOrder);
     } // end method updateMovies
 
     @Override
-    public void onStart() {
-        super.onStart();
-        updateMovies();
-    } // end method onStart
+    public void onResume() {
+        super.onResume();
+        Log.v("SAVED_INSTANCE", "Resuming");
+        // Checks whether sort order preference has changed
+        SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(getActivity());
+        String prefOrder = sharedPref.getString(getString(R.string.prefs_sort_order_key),
+                getString(R.string.prefs_sort_order_default));
+        // If preferences have changed, refresh movies
+        if (!prefOrder.equals(sortOrder)) {
+            sortOrder = prefOrder;
+            movieData = "";
+            posterAdapter.clear();
+            updateMovies();
+        }
+    } // end method onResume
+
+    @Override
+    public void onSaveInstanceState(Bundle savedInstanceState) {
+
+        // Saves the current sort order, movie data
+        savedInstanceState.putString(getString(R.string.prefs_sort_order_key), sortOrder);
+        savedInstanceState.putString(getString(R.string.saved_state_baseURL_key), baseURL);
+        savedInstanceState.putString(getString(R.string.saved_state_movieData_key), movieData);
+
+        // Always call the superclass so it can save the view hierarchy state
+        super.onSaveInstanceState(savedInstanceState);
+    } // end method onSaveInstanceState
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        // this Fragment has menu events
+        // Specifies that this Fragment has menu events
         setHasOptionsMenu(true);
     } // end method onCreate
 
@@ -74,24 +115,69 @@ public class MoviePosterFragment extends Fragment {
 
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
-
         // Handle action bar item clicks here. The action bar will
         // automatically handle clicks on the Home/Up button, so long
         // as you specify a parent activity in AndroidManifest.xml.
-
         int id = item.getItemId();
         return super.onOptionsItemSelected(item);
     } // end method onOptionsItemSelected
 
     @Override
-    public View onCreateView(LayoutInflater inflater, ViewGroup container,
-                             Bundle savedInstanceState) {
+    public View onCreateView(final LayoutInflater inflater,
+                             final ViewGroup container,
+                             final Bundle savedInstanceState) {
 
+        final String LOG_TAG = "onCreateView";
+        Log.v(LOG_TAG, LOG_TAG);
         // Inflates the root view for the fragment
-        View rootView = inflater.inflate(R.layout.fragment_main, container, false);
-
+        final View rootView = inflater.inflate(R.layout.fragment_main, container, false);
         posterAdapter = new ImageAdapter(new ArrayList<Movie>());
-        updateMovies();
+
+        SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(getActivity());
+        if (savedInstanceState != null) {
+
+            String prefOrder = sharedPref
+                    .getString(getString(R.string.prefs_sort_order_key),
+                            getString(R.string.prefs_sort_order_default));
+            String savedOrder = savedInstanceState
+                    .getString(getString(R.string.prefs_sort_order_key));
+
+            // Shared preferences value overrides saved state
+            if (!prefOrder.equals(savedOrder)) {
+                Log.v("Pref order differs", "");
+                sortOrder = prefOrder;
+                movieData = "";
+                baseURL = "";
+            } else {
+                sortOrder = savedOrder;
+                baseURL = savedInstanceState.getString(getString(R.string.saved_state_baseURL_key));
+                movieData = savedInstanceState.getString(getString(R.string.saved_state_movieData_key));
+                try {
+                    Movie[] movies = getMovieDataFromJson(movieData, baseURL);
+                    if (movies != null) {
+                        posterAdapter.clear();
+                        for (Movie movie : movies) {
+                            posterAdapter.add(movie);
+//                            Log.v("MOVIE", movie.getTitle());
+                        }
+                    }
+                } catch (JSONException e) {
+                    Log.e(LOG_TAG, "Movies JSON parsing error ", e);
+                }
+                Log.v("POSTER_ADAPTER", "" + posterAdapter.getCount());
+            }
+        } else {
+            // Initialize sortOrder with shared preferences/default value
+            Log.v("first run", "");
+            sortOrder = sharedPref.getString(getString(R.string.prefs_sort_order_key),
+                    getString(R.string.prefs_sort_order_default));
+            movieData = "";
+            baseURL = "";
+        }
+
+        // If movieData is out of date, update it
+        if (movieData.equals(""))
+            updateMovies();
 
         // Connects posterAdapter to GridView
         final GridView gridView = (GridView) rootView.findViewById(R.id.grid_item_poster);
@@ -116,6 +202,62 @@ public class MoviePosterFragment extends Fragment {
 
         return rootView;
     } // end method onCreateView
+
+    public Movie[] getMovieDataFromJson(String moviesJsonStr, String baseURL)
+            throws JSONException {
+
+        // These are the names of the JSON objects that need to be extracted.
+        final String OWM_RESULTS = "results";
+
+        List<Movie> resultList = new ArrayList<>();
+
+        if (moviesJsonStr == null)
+            return null;
+
+        JSONObject moviesJson = new JSONObject(moviesJsonStr);
+        JSONArray moviesArray = moviesJson.getJSONArray(OWM_RESULTS);
+        for (int i = 0; i < moviesArray.length(); ++i) {
+
+            JSONObject jsonMovie = moviesArray.getJSONObject(i);
+
+            String title = "";
+            if (!jsonMovie.get("original_title").toString().equals("null"))
+                title = (String) jsonMovie.get("original_title");
+
+            String posterPath = "";
+            if (!jsonMovie.get("poster_path").toString().equals("null")) {
+                // sizes are: w92, w154, w185, w342, w500, w780 and original
+                posterPath = baseURL + "w342" + jsonMovie.get("poster_path");
+            }
+
+            String releaseDate = "";
+            if (!jsonMovie.get("release_date").toString().equals("null"))
+                releaseDate = (String) jsonMovie.get("release_date");
+
+            String voteAverage = "";
+            if (!jsonMovie.get("vote_average").toString().equals("null"))
+                voteAverage = "" + jsonMovie.get("vote_average");
+
+            String overview = "";
+            if (!jsonMovie.get("overview").toString().equals("null")) {
+                overview = (String) jsonMovie.get("overview");
+            }
+
+            // Stops adding movies without posters
+            if (!posterPath.equals("")) {
+                Movie movie = new Movie(title,
+                        posterPath,
+                        releaseDate,
+                        voteAverage,
+                        overview);
+                resultList.add(movie);
+            }
+        }
+
+        Movie[] results = new Movie[resultList.size()];
+        resultList.toArray(results);
+        return results;
+    } // end method getMovieDataFromJson
 
     public class FetchMoviesTask extends AsyncTask<String, Void, Movie[]> {
 
@@ -196,8 +338,14 @@ public class MoviePosterFragment extends Fragment {
             // can be released in the finally block.
 
             String jsonResponse = null;
-            String baseURL = null;
+            baseURL = "";
             String sortOrder = "";
+
+            if (!isNetworkAvailable()) {
+                Log.v(LOG_TAG, "NETWORK NOT AVAILABLE");
+                movieData = "";
+                return null;
+            }
 
             if (params != null) {
                 sortOrder = params[0];
@@ -237,7 +385,7 @@ public class MoviePosterFragment extends Fragment {
             if (sortOrder.equals("Most Popular"))
                 URI.appendQueryParameter("sort_by", "popularity.desc");
             else if (sortOrder.equals("Most Recent")) {
-                String today = "";
+                String today;
                 SimpleDateFormat date_format = new SimpleDateFormat("yyyy-MM-dd");
                 today = date_format.format(new Date());
                 URI.appendQueryParameter("release_date.lte", today);
@@ -249,10 +397,10 @@ public class MoviePosterFragment extends Fragment {
             // Log.v("URL", URI.build().toString());
 
             // Executes query
-            jsonResponse = getJsonResponse(URI.build().toString());
+            movieData = getJsonResponse(URI.build().toString());
 
             try {
-                return getMovieDataFromJson(jsonResponse, baseURL);
+                return getMovieDataFromJson(movieData, baseURL);
             } catch (JSONException e) {
                 Log.e(LOG_TAG, "Movies JSON parsing error ", e);
             }
@@ -276,63 +424,6 @@ public class MoviePosterFragment extends Fragment {
             }
         }
 
-        private Movie[] getMovieDataFromJson(String moviesJsonStr, String baseURL)
-                throws JSONException {
-
-            // These are the names of the JSON objects that need to be extracted.
-            final String OWM_RESULTS = "results";
-
-            List<Movie> resultList = new ArrayList<Movie>();
-
-            if (moviesJsonStr == null)
-                return null;
-
-            JSONObject moviesJson = new JSONObject(moviesJsonStr);
-            JSONArray moviesArray = moviesJson.getJSONArray(OWM_RESULTS);
-            for (int i = 0; i < moviesArray.length(); ++i) {
-
-                JSONObject jsonMovie = moviesArray.getJSONObject(i);
-
-                String title = "";
-                if (!jsonMovie.get("original_title").toString().equals("null"))
-                    title = (String) jsonMovie.get("original_title");
-//                Log.v("Title", title);
-
-                String posterPath = "";
-                if (!jsonMovie.get("poster_path").toString().equals("null")) {
-                    // sizes are: w92, w154, w185, w342, w500, w780 and original
-                    posterPath = baseURL + "w342" + (String) jsonMovie.get("poster_path");
-                }
-
-                String releaseDate = "";
-                if (!jsonMovie.get("release_date").toString().equals("null"))
-                    releaseDate = (String) jsonMovie.get("release_date");
-
-                String voteAverage = "";
-                if (!jsonMovie.get("vote_average").toString().equals("null"))
-                    voteAverage = (String) "" + jsonMovie.get("vote_average");
-
-                String overview = "";
-                if (!jsonMovie.get("overview").toString().equals("null")) {
-                    overview = (String) jsonMovie.get("overview");
-                }
-
-                // Stops adding movies without posters
-                if (!posterPath.equals("")) {
-                    Movie movie = new Movie(title,
-                            posterPath,
-                            releaseDate,
-                            voteAverage,
-                            overview);
-                    resultList.add(movie);
-                }
-            }
-
-            Movie[] results = new Movie[resultList.size()];
-            resultList.toArray(results);
-            return results;
-        } // end method getMovieDataFromJson
-
     } // end class FetchMoviesTask
 
     public class ImageAdapter extends ArrayAdapter<Movie> {
@@ -352,6 +443,8 @@ public class MoviePosterFragment extends Fragment {
                 imageView = (ImageView) convertView;
             }
             int width = (int) ((double) parent.getWidth() / ((double) NUMBER_OF_COLUMNS));
+            // race condition... parent.getWidth() sometimes returns 0
+            if (width == 0) width = 360;
             String url = getItem(position).getPosterPath();
             if (!url.equals("")) {
                 Picasso.with(getActivity())
