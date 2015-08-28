@@ -15,7 +15,7 @@ public class SettingsActivity extends PreferenceActivity
         addPreferencesFromResource(R.xml.preferences);
         // Attach an OnPreferenceChangeListener so the UI summary can be updated when the
         // preference changes.
-        bindPreferenceSummaryToValue(findPreference(getString(R.string.prefs_sort_order_key)));
+        bindPreferenceSummaryToValue(findPreference(getString(R.string.prefs_sortOrder_key)));
     } // end method onCreate
 
     /**

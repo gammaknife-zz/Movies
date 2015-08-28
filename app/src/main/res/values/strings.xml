@@ -16,10 +16,10 @@
     <!-- "Settings" text in action bar -->
     <string name="title_activity_settings">Settings</string>
 
-    <string name="prefs_sort_order_key" translatable="false">sort_order</string>
-    <string name="prefs_sort_order_title">Sort Order</string>
-    <string name="prefs_sort_order_default">Most Popular</string>
+    <string name="prefs_sortOrder_key" translatable="false">sortOrder</string>
+    <string name="prefs_sortOrder_title">Sort Order</string>
+    <string name="prefs_sortOrder_default">Most Popular</string>
 
-    <string name="saved_state_movieData_key" translatable="false">movie_data</string>
-    <string name="saved_state_baseURL_key" translatable="false">base_url</string>
+    <string name="saved_state_movieList_key" translatable="false">movieList</string>
+    <string name="saved_state_baseURL_key" translatable="false">baseURL</string>
 </resources>

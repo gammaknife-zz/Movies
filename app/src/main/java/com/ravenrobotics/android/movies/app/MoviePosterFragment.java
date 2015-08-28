@@ -45,10 +45,10 @@ public class MoviePosterFragment extends Fragment {
     private final static int NUMBER_OF_COLUMNS = 3;
 
     private ImageAdapter posterAdapter;
+    private ArrayList<Movie> movieList;
 
     private String sortOrder;
     private String baseURL;
-    private String movieData;
 
     public MoviePosterFragment() {
     } // end constructor
@@ -66,24 +66,24 @@ public class MoviePosterFragment extends Fragment {
 
     private void updateMovies() {
         SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(getActivity());
-        sortOrder = sharedPref.getString(getString(R.string.prefs_sort_order_key),
-                getString(R.string.prefs_sort_order_default));
+        sortOrder = sharedPref.getString(getString(R.string.prefs_sortOrder_key),
+                getString(R.string.prefs_sortOrder_default));
         FetchMoviesTask ft = new FetchMoviesTask();
         ft.execute(sortOrder);
     } // end method updateMovies
 
     @Override
     public void onResume() {
+        final String LOG_TAG = "onResume";
         super.onResume();
-        Log.v("SAVED_INSTANCE", "Resuming");
         // Checks whether sort order preference has changed
         SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(getActivity());
-        String prefOrder = sharedPref.getString(getString(R.string.prefs_sort_order_key),
-                getString(R.string.prefs_sort_order_default));
-        // If preferences have changed, refresh movies
+        String prefOrder = sharedPref.getString(getString(R.string.prefs_sortOrder_key),
+                getString(R.string.prefs_sortOrder_default));
+        // If preferences have changed, refresh movie data
         if (!prefOrder.equals(sortOrder)) {
             sortOrder = prefOrder;
-            movieData = "";
+//            Log.v(LOG_TAG, "Updating movie data from server");
             posterAdapter.clear();
             updateMovies();
         }
@@ -91,12 +91,11 @@ public class MoviePosterFragment extends Fragment {
 
     @Override
     public void onSaveInstanceState(Bundle savedInstanceState) {
-
-        // Saves the current sort order, movie data
-        savedInstanceState.putString(getString(R.string.prefs_sort_order_key), sortOrder);
+        // Saves the movie data
+        savedInstanceState.putParcelableArrayList(getString(R.string.saved_state_movieList_key), movieList);
+        // Saves the current sort order, base image URL
+        savedInstanceState.putString(getString(R.string.prefs_sortOrder_key), sortOrder);
         savedInstanceState.putString(getString(R.string.saved_state_baseURL_key), baseURL);
-        savedInstanceState.putString(getString(R.string.saved_state_movieData_key), movieData);
-
         // Always call the superclass so it can save the view hierarchy state
         super.onSaveInstanceState(savedInstanceState);
     } // end method onSaveInstanceState
@@ -106,6 +105,9 @@ public class MoviePosterFragment extends Fragment {
         super.onCreate(savedInstanceState);
         // Specifies that this Fragment has menu events
         setHasOptionsMenu(true);
+        // Initializes movieList and posterAdapter
+        movieList = new ArrayList<Movie>();
+        posterAdapter = new ImageAdapter(movieList);
     } // end method onCreate
 
     @Override
@@ -126,58 +128,59 @@ public class MoviePosterFragment extends Fragment {
     public View onCreateView(final LayoutInflater inflater,
                              final ViewGroup container,
                              final Bundle savedInstanceState) {
-
+        // Defines log tag for this method
         final String LOG_TAG = "onCreateView";
-        Log.v(LOG_TAG, LOG_TAG);
         // Inflates the root view for the fragment
         final View rootView = inflater.inflate(R.layout.fragment_main, container, false);
-        posterAdapter = new ImageAdapter(new ArrayList<Movie>());
-
+        // Creates shared preferences object
         SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(getActivity());
+        // Checks if state has been previously saved
         if (savedInstanceState != null) {
 
             String prefOrder = sharedPref
-                    .getString(getString(R.string.prefs_sort_order_key),
-                            getString(R.string.prefs_sort_order_default));
+                    .getString(getString(R.string.prefs_sortOrder_key),
+                            getString(R.string.prefs_sortOrder_default));
             String savedOrder = savedInstanceState
-                    .getString(getString(R.string.prefs_sort_order_key));
+                    .getString(getString(R.string.prefs_sortOrder_key));
 
             // Shared preferences value overrides saved state
+            // If prefOrder != savedOrder, changes order and asks server for update
             if (!prefOrder.equals(savedOrder)) {
-                Log.v("Pref order differs", "");
                 sortOrder = prefOrder;
-                movieData = "";
                 baseURL = "";
-            } else {
+            }
+            // pref and saved order are same
+            else {
                 sortOrder = savedOrder;
                 baseURL = savedInstanceState.getString(getString(R.string.saved_state_baseURL_key));
-                movieData = savedInstanceState.getString(getString(R.string.saved_state_movieData_key));
-                try {
-                    Movie[] movies = getMovieDataFromJson(movieData, baseURL);
-                    if (movies != null) {
-                        posterAdapter.clear();
-                        for (Movie movie : movies) {
-                            posterAdapter.add(movie);
-//                            Log.v("MOVIE", movie.getTitle());
-                        }
-                    }
-                } catch (JSONException e) {
-                    Log.e(LOG_TAG, "Movies JSON parsing error ", e);
+                movieList = savedInstanceState
+                        .getParcelableArrayList(getString(R.string.saved_state_movieList_key));
+                if (movieList != null) {
+                    // NOTE: posterAdapter is cleared on rotate etc.
+                    // Populates posterAdapter with movieList
+//                    Log.v(LOG_TAG, "movieList restored");
+                    posterAdapter = new ImageAdapter(movieList);
                 }
-                Log.v("POSTER_ADAPTER", "" + posterAdapter.getCount());
+                // Logs error and triggers update if saved ParcelableArrayList is null
+                else {
+                    Log.e(LOG_TAG, "ParcelableArrayList movieList is null");
+                }
             }
-        } else {
+        }
+        // No previously saved state, this is the first run
+        else {
             // Initialize sortOrder with shared preferences/default value
-            Log.v("first run", "");
-            sortOrder = sharedPref.getString(getString(R.string.prefs_sort_order_key),
-                    getString(R.string.prefs_sort_order_default));
-            movieData = "";
+            sortOrder = sharedPref.getString(getString(R.string.prefs_sortOrder_key),
+                    getString(R.string.prefs_sortOrder_default));
             baseURL = "";
         }
 
-        // If movieData is out of date, update it
-        if (movieData.equals(""))
+        // If posterAdapter is still empty, movie data has not been set or is out of date
+        // Updates movieList, posterAdapter
+        if (posterAdapter.getCount() == 0) {
+//            Log.v(LOG_TAG, "Updating movie data from server");
             updateMovies();
+        }
 
         // Connects posterAdapter to GridView
         final GridView gridView = (GridView) rootView.findViewById(R.id.grid_item_poster);
@@ -343,7 +346,6 @@ public class MoviePosterFragment extends Fragment {
 
             if (!isNetworkAvailable()) {
                 Log.v(LOG_TAG, "NETWORK NOT AVAILABLE");
-                movieData = "";
                 return null;
             }
 
@@ -397,7 +399,7 @@ public class MoviePosterFragment extends Fragment {
             // Log.v("URL", URI.build().toString());
 
             // Executes query
-            movieData = getJsonResponse(URI.build().toString());
+            String movieData = getJsonResponse(URI.build().toString());
 
             try {
                 return getMovieDataFromJson(movieData, baseURL);
